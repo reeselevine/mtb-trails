@@ -11,7 +11,11 @@
     "skill",
     "guide"
   ],
-  "author": "Amazon.com",
+  "author": "Reese Levine",
+  "repository": {
+    "type": "git",
+    "url": "git://github.com/reeselevine/mtb-trails.git"
+  },
   "license": "Apache-2.0",
   "dependencies": {
     "alexa-sdk": "^1.0.12"
