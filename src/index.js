@@ -1,6 +1,7 @@
 var Alexa = require('alexa-sdk');
 var googleMapsClient = require('@google/maps').createClient({
   key: 'Google Maps API key here'
+
 });
 var https = require('https');
 
@@ -13,7 +14,7 @@ var welcomeMessage = "Welcome to MTB Trails. You can ask for trails near a city 
 
 var welcomeReprompt = "Ask me for trails near any city";
 
-var helpMessage = "Here is something you can ask me: Find me trails near Boulder, Colorado. After that, you can say: give me more information about trail number two. You can also say: Tell me about a place with cool trails. What do you want to do?";
+var helpMessage = "Here is something you can ask me: Find me trails near Boulder, Colorado. After that, you can say: give me more information about trail number two. What do you want to do?";
 
 var goodbyeMessage = "Thanks for using MTB trails. See you out on the bike!";
 
@@ -62,10 +63,11 @@ var newSessionHandlers = {
 
 var searchHandlers = Alexa.CreateStateHandler(states.SEARCHMODE, {
   'getTrailsIntent': function () {
+      this.handler.state = states.TRAILINFO;
       city = '';
       var lat = 0;
       var lng = 0;
-      if (this.event.request.slots.city) {
+      if (this.event.request.intent.slots.city) {
           if (this.event.request.intent.slots.city.value) {
               city = this.event.request.intent.slots.city.value;
           }
@@ -76,46 +78,52 @@ var searchHandlers = Alexa.CreateStateHandler(states.SEARCHMODE, {
           address: city
         }, function(err, response) {
           if (!err) {
-            lat = response.json.results.geometry.location.lat; 
-            lng = response.json.results.geometry.location.lng;
+            console.log(response.json.results);
+            console.log(response.json.results[0].geometry);
+            lat = parseFloat(response.json.results[0].geometry.location.lat); 
+            lng = parseFloat(response.json.results[0].geometry.location.lng);
+          } else {
+            console.error(err);
+          }
+          if (lat != 0 && lng != 0) {
+            var loc = [lat, lng];
+            console.log(loc);
+            httpsGet(loc, function (response) {
+              responseData = JSON.parse(response);
+              var cardContent = "Data provided by MTB Project\n\n";
+
+              if (responseData == null) {
+                output = "There was a problem getting trail data. Please try again.";
+              } else {
+                output = "There are " + responseData.trails.length + " trails near " + city + ".";
+                if (responseData.trails.length > numberOfTrails) {
+                  output += " Here are the top " + numberOfTrails + ".";
+                }
+                output += " See your Alexa app for more information and more trails. ";
+              
+                for (var i = 0; i < responseData.trails.length; i++) {
+                  if (i < numberOfTrails) {
+                    var name = responseData.trails[i].name;
+                    var summary = responseData.trails[i].summary;
+                    var difficulty = responseData.trails[i].difficulty;
+                    var index = i + 1;
+                    output += "Trail " + index + ";";
+
+                    output += name + ". " + summary + " Difficulty: " + difficulty + ";";
+                  }
+                  cardContent += name + "\n" + summary + "\n" + "Difficulty: " + difficulty + "\n\n"; 
+                }
+              
+              }
+              var cardTitle = city + " Trails";
+              output += "\n" + trailsMoreInfoMessage; 
+              output = output.replace(/&/, 'and');
+              alexa.emit(':askWithCard', output, trailsMoreInfoMessage, cardTitle, cardContent);
+            }); 
+          } else {
+            alexa.emit(':ask', cityConversionErrorMessage);
           }
         });
-
-        if (lat != 0 && lng != 0) {
-          var loc = [lat, lng];
-          httpsGet(loc, function (response) {
-            responseData = JSON.parse(response);
-            var cardContent = "Data provided by MTB Project\n\n";
-
-            if (responseData == null) {
-              output = "There was a problem getting trail data. Please try again.";
-            } else {
-              output = "There are " + responseData.trails.length + " trails near " + city + ".";
-              if (responseData.trails.length > numberOfTrails) {
-                output += " Here are the top " + numberOfTrails + ".";
-              }
-              output += " See your Alexa app for more information and trails.";
-              
-              for (var i = 0; i < responseData.trails.length; i++) {
-                if (i < numberOfTrails) {
-                  var name = responseData.trails[i].name;
-                  var summary = responseData.trails[i].summary;
-                  var difficulty = responseData.trails[i].difficulty;
-
-                  output += name + ". " + summary + " Difficulty: " + difficulty + ";";
-                }
-                cardContent += name + "\n" + summary + "\n" + "Difficulty: " + difficulty + "\n\n"; 
-              }
-              
-            }
-            var cardTitle = city + " Trails";
-            output += "\n" + trailsMoreInfoMessage; 
-            this.handler.state = states.TRAILINFO;
-            alexa.emit(':askWithCard', output, trailsMoreInfoMessage, cardTitle, cardContent);
-          }); 
-        } else {
-          this.emit(':ask', cityConversionErrorMessage);
-        }
       } else {
         this.emit(':ask', noCityErrorMessage);
       }
@@ -162,10 +170,11 @@ var trailInfoHandlers = Alexa.CreateStateHandler(states.TRAILINFO, {
 
     if (trail > 0 && trail <= responseData.trails.length) {
       var selectedTrail = responseData.trails[parseInt(trail) - 1];  
-      output = selectedTrail.name + "is " + selectedTrail.summary;
-      output += "It has " + selectedTrail.stars + " stars and a difficulty rating of " + selectedTrail.difficulty + ".";
-      output += "It is " + selectedTrail.length + " miles long, has " + selectedTrail.scent + " feet of climbing, and reaches a high point of " + selectedTrail.high + " feet. ";
+      output = selectedTrail.name + ". " + selectedTrail.summary + ';';
+      output += " It has " + selectedTrail.stars + " stars and a difficulty rating of " + selectedTrail.difficulty + ". ";
+      output += "It is " + selectedTrail.length + " miles long, has " + selectedTrail.ascent + " feet of climbing, and reaches a high point of " + selectedTrail.high + " feet.  ";
       output += hearMoreMessage;
+      output = output.replace(/&/, 'and');
       this.emit(':ask', output, hearMoreMessage);
     } else {
       this.emit(':ask', noTrailErrorMessage, trailsMoreInfoMessage); 
@@ -181,9 +190,7 @@ var trailInfoHandlers = Alexa.CreateStateHandler(states.TRAILINFO, {
       this.emit(':tell', goodbyeMessage);
   },
   'AMAZON.HelpIntent': function () {
-      output = "There are " + responseData.trails.length + " trails near " + city + ".";
-      output += trailsMoreInfoMessage;
-      this.emit(':ask', output, helpMessage);
+      this.emit(':ask', helpMessage, helpMessage);
   },
   'AMAZON.RepeatIntent': function () {
       this.emit(':ask', output, helpMessage);
@@ -201,8 +208,8 @@ var trailInfoHandlers = Alexa.CreateStateHandler(states.TRAILINFO, {
 
 function httpsGet(query, callback) {
   var options = {
-    host: 'https://www.mtbproject.com',
-    path: '/data/get-trails?lat=' + query[0] + '&lon=' + query[1] + '&key=' + "MTB Project API key here",
+    host: 'www.mtbproject.com',
+    path: '/data/get-trails?lat=' + query[0] + '&lon=' + query[1] + '&key=MTB Project API key here',
     method: 'GET'
   };
  
