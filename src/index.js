@@ -11,7 +11,7 @@ var states = {
 
 var welcomeMessage = "Welcome to MTB Trails. You can ask for trails near a city name and get more information about those trails.";
 
-var welcomeRemprompt = "Ask me for trails near any city";
+var welcomeReprompt = "Ask me for trails near any city";
 
 var helpMessage = "Here is something you can ask me: Find me trails near Boulder, Colorado. After that, you can say: give me more information about trail number two. You can also say: Tell me about a place with cool trails. What do you want to do?";
 
@@ -21,9 +21,19 @@ var noCityErrorMessage = "Sorry, I didn't recognize that city name. Please try a
 
 var cityConversionErrorMessage = "Something went wrong while looking for trails. Please try again.";
 
+var noTrailErrorMessage = "What trail was that? Please try again.";
+
+var trailsMoreInfoMessage = "You can tell me a number for more information. For example, open number one.";
+
+var hearMoreMessage = "Would you like to hear about another trail?";
+
 var numberOfTrails = 3;
 
-var ouput = "";
+var output = "";
+
+var responseData;
+
+var city;
 
 var alexa;
 
@@ -31,6 +41,10 @@ var newSessionHandlers = {
   'LaunchRequest': function () {
       this.handler.state = states.SEARCHMODE;
       this.emit(':ask', welcomeMessage, welcomeReprompt);
+  },
+  'getTrailsIntent': function () {
+      this.handler.state = states.SEARCHMODE;
+      this.emitWithState('getTrailsIntent');
   },
   'AMAZON.StopIntent': function () {
       this.emit(':tell', goodbyeMessage);
@@ -48,7 +62,7 @@ var newSessionHandlers = {
 
 var searchHandlers = Alexa.CreateStateHandler(states.SEARCHMODE, {
   'getTrailsIntent': function () {
-      var city = '';
+      city = '';
       var lat = 0;
       var lng = 0;
       if (this.event.request.slots.city) {
@@ -70,7 +84,7 @@ var searchHandlers = Alexa.CreateStateHandler(states.SEARCHMODE, {
         if (lat != 0 && lng != 0) {
           var loc = [lat, lng];
           httpsGet(loc, function (response) {
-            var responseData = JSON.parse(response);
+            responseData = JSON.parse(response);
             var cardContent = "Data provided by MTB Project\n\n";
 
             if (responseData == null) {
@@ -95,8 +109,10 @@ var searchHandlers = Alexa.CreateStateHandler(states.SEARCHMODE, {
               
             }
             var cardTitle = city + " Trails";
-            alexa.emit(':tellWithCard', output, cardTitle, cardContent);
-          } 
+            output += "\n" + trailsMoreInfoMessage; 
+            this.handler.state = states.TRAILINFO;
+            alexa.emit(':askWithCard', output, trailsMoreInfoMessage, cardTitle, cardContent);
+          }); 
         } else {
           this.emit(':ask', cityConversionErrorMessage);
         }
@@ -127,22 +143,47 @@ var searchHandlers = Alexa.CreateStateHandler(states.SEARCHMODE, {
       this.emit('AMAZON.StopIntent');
   },
   'Unhandled': function () {
-      this.emit(':ask', helpMessage, welcomeRemprompt);
+      this.emit(':ask', helpMessage, welcomeReprompt);
   }
 });
 
 var trailInfoHandlers = Alexa.CreateStateHandler(states.TRAILINFO, {
+  'getTrailsIntent': function () {
+    this.handler.state = states.SEARCHMODE;
+    this.emitWithState('getTrailsIntent');
+  },  
+  'getMoreInfoIntent': function () {
+    var trail = 0;
+    if (this.event.request.intent.slots.trail) {
+      if (this.event.request.intent.slots.trail.value) {
+        trail = this.event.request.intent.slots.trail.value;
+      }
+    }
+
+    if (trail > 0 && trail <= responseData.trails.length) {
+      var selectedTrail = responseData.trails[parseInt(trail) - 1];  
+      output = selectedTrail.name + "is " + selectedTrail.summary;
+      output += "It has " + selectedTrail.stars + " stars and a difficulty rating of " + selectedTrail.difficulty + ".";
+      output += "It is " + selectedTrail.length + " miles long, has " + selectedTrail.scent + " feet of climbing, and reaches a high point of " + selectedTrail.high + " feet. ";
+      output += hearMoreMessage;
+      this.emit(':ask', output, hearMoreMessage);
+    } else {
+      this.emit(':ask', noTrailErrorMessage, trailsMoreInfoMessage); 
+    }
+  },
   'AMAZON.YesIntent': function () {
-      this.emit(':ask', helpMessage, helpMessage);
+      this.emit(':ask', trailsMoreInfoMessage, trailsMoreInfoMessage);
   },
   'AMAZON.NoIntent': function () {
-      this.emit(':ask', helpMessage, helpMessage);
+      this.emit(':tell', goodbyeMessage);
   },
   'AMAZON.StopIntent': function () {
       this.emit(':tell', goodbyeMessage);
   },
   'AMAZON.HelpIntent': function () {
-      this.emit(':ask', helpMessage, helpMessage);
+      output = "There are " + responseData.trails.length + " trails near " + city + ".";
+      output += trailsMoreInfoMessage;
+      this.emit(':ask', output, helpMessage);
   },
   'AMAZON.RepeatIntent': function () {
       this.emit(':ask', output, helpMessage);
@@ -154,7 +195,7 @@ var trailInfoHandlers = Alexa.CreateStateHandler(states.TRAILINFO, {
       this.emit('AMAZON.StopIntent');
   },
   'Unhandled': function () {
-      this.emit(':ask', helpMessage, welcomeRemprompt);
+      this.emit(':ask', helpMessage, welcomeReprompt);
   }
 });
 
@@ -163,25 +204,22 @@ function httpsGet(query, callback) {
     host: 'https://www.mtbproject.com',
     path: '/data/get-trails?lat=' + query[0] + '&lon=' + query[1] + '&key=' + "MTB Project API key here",
     method: 'GET'
- 
-    var req = https.request(options, (res) => {
-      var body = '';
-      res.on('data', (d) => {
-        body += d;
-      });
-      res.on('end', function () {
-        callback(body);
-      });
-    });
-    req.end();
-    req.on('error', (e) => {
-      console.error(e);
-    });
   };
+ 
+  var req = https.request(options, (res) => {
+    var body = '';
+    res.on('data', (d) => {
+      body += d;
+    });
+    res.on('end', function () {
+      callback(body);
+    });
+  });
+  req.end();
+  req.on('error', (e) => {
+    console.error(e);
+  });
 }
-
-
-
 
 exports.handler = function (event, context, callback) {
   alexa = Alexa.handler(event, context, callback);
