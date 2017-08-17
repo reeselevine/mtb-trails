@@ -1,6 +1,7 @@
 var Alexa = require('alexa-sdk');
 var googleMapsClient = require('@google/maps').createClient({
-  key: 'Google Maps API key here'
+  key: 'Google Maps API Key here'
+
 
 });
 var https = require('https');
@@ -10,11 +11,13 @@ var states = {
     TRAILINFO: '_TRAILINFO',
 };
 
+var MTBProjectAPIKey = 'MTB Project API Key here';
+
 var welcomeMessage = "Welcome to MTB Trails. You can ask for trails near a city name and get more information about those trails.";
 
 var welcomeReprompt = "Ask me for trails near any city";
 
-var helpMessage = "Here is something you can ask me: Find me trails near Boulder, Colorado. After that, you can say: give me more information about trail number two. What do you want to do?";
+var helpMessage = "Here is something you can ask me: Find me trails near Boulder, Colorado. After that, you can say: give me more information about trail number two, or what are the conditions of trail two. What do you want to do?";
 
 var goodbyeMessage = "Thanks for using MTB trails. See you out on the bike!";
 
@@ -24,7 +27,7 @@ var cityConversionErrorMessage = "Something went wrong while looking for trails.
 
 var noTrailErrorMessage = "What trail was that? Please try again.";
 
-var trailsMoreInfoMessage = "You can tell me a number for more information. For example, open number one.";
+var trailsMoreInfoMessage = "You can tell me a number for more information. For example, open number one, or what are the conditions of number one.";
 
 var hearMoreMessage = "Would you like to hear about another trail?";
 
@@ -88,7 +91,7 @@ var searchHandlers = Alexa.CreateStateHandler(states.SEARCHMODE, {
           if (lat != 0 && lng != 0) {
             var loc = [lat, lng];
             console.log(loc);
-            httpsGet(loc, function (response) {
+            httpsGetTrails(loc, function (response) {
               responseData = JSON.parse(response);
               var cardContent = "Data provided by MTB Project\n\n";
 
@@ -180,11 +183,35 @@ var trailInfoHandlers = Alexa.CreateStateHandler(states.TRAILINFO, {
       this.emit(':ask', noTrailErrorMessage, trailsMoreInfoMessage); 
     }
   },
+  'getConditionsIntent': function () {
+    var trail = 0;
+    if (this.event.request.intent.slots.trail) {
+      if (this.event.request.intent.slots.trail.value) {
+        trail = this.event.request.intent.slots.trail.value;
+      }
+    }
+
+    if (trail > 0 && trail <= responseData.trails.length) {
+      var id = responseData.trails[trail - 1].id;
+      httpsGetConditions(id, function (response) {
+        var trailCondition = JSON.parse(response);
+        if (trailCondition == null) {
+          output = "There was a problem getting trails data. Please try again.";
+        } else {
+          output = 'As of ' + trailCondition["0"].conditionDate + ', ' + trailCondition["0"].name + ' has a condition of ' + trailCondition["0"].conditionStatus + '. ';
+          output += hearMoreMessage;
+          alexa.emit(':ask', output, hearMoreMessage);
+        }
+      });
+    } else {
+      this.emit(':ask', noTrailErrorMessage, trailsMoreInfoMessage);
+    }
+  },
   'AMAZON.YesIntent': function () {
       this.emit(':ask', trailsMoreInfoMessage, trailsMoreInfoMessage);
   },
   'AMAZON.NoIntent': function () {
-      this.emit(':tell', goodbyeMessage);
+      this.emit(':ask', welcomeReprompt, welcomeReprompt);
   },
   'AMAZON.StopIntent': function () {
       this.emit(':tell', goodbyeMessage);
@@ -206,10 +233,10 @@ var trailInfoHandlers = Alexa.CreateStateHandler(states.TRAILINFO, {
   }
 });
 
-function httpsGet(query, callback) {
+function httpsGetTrails(query, callback) {
   var options = {
     host: 'www.mtbproject.com',
-    path: '/data/get-trails?lat=' + query[0] + '&lon=' + query[1] + '&key=MTB Project API key here',
+    path: '/data/get-trails?lat=' + query[0] + '&lon=' + query[1] + '&key=' + MTBProjectAPIKey,
     method: 'GET'
   };
  
@@ -222,6 +249,28 @@ function httpsGet(query, callback) {
       callback(body);
     });
   });
+  req.end();
+  req.on('error', (e) => {
+    console.error(e);
+  });
+}
+
+function httpsGetConditions(query, callback) {
+  var options = {
+    host: 'www.mtbproject.com',
+    path: '/data/get-conditions?ids=' + query + '&key=' + MTBProjectAPIKey,
+    method: 'GET'
+  };
+
+  var req = https.request(options, (res) => {
+    var body = '';
+    res.on('data', (d) => {
+      body += d;
+    });
+    res.on('end', function () {
+      callback(body);
+    });
+  }); 
   req.end();
   req.on('error', (e) => {
     console.error(e);
