@@ -16,7 +16,7 @@
     "type": "git",
     "url": "git://github.com/reeselevine/mtb-trails.git"
   },
-  "license": "Apache-2.0",
+  "license": "MIT",
   "dependencies": {
     "@google/maps": "^0.4.3",
     "alexa-sdk": "^1.0.12"
