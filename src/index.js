@@ -3,6 +3,7 @@ var googleMapsClient = require('@google/maps').createClient({
   key: 'Google Maps API key here'
 
 
+
 });
 var https = require('https');
 
@@ -13,11 +14,11 @@ var states = {
 
 var MTBProjectAPIKey = 'MTB Project API key here';
 
-var welcomeMessage = "Welcome to MTB Trails. Ask me for trails near any city."
+var welcomeMessage = "Welcome to MTB Trails. Ask me for trails near any city. The default search distance is 30 miles. You can change it by saying: Change distance to 10 miles, or any number between 1 and 200."
 
 var welcomeReprompt = "Ask me for trails near any city";
 
-var trailsHelpMessage = "Here is something you can ask me: Find me trails near Boulder, Colorado. After that, you can say: give me more information about trail number two, or what are the conditions of trail two. What do you want to do?";
+var trailsHelpMessage = "Here are some things you can say to me: Change distance to 15 miles. Find me trails near Boulder, Colorado. After that, you can say: give me more information about trail number two, or what are the conditions of trail two. What do you want to do?";
 
 var trailsMoreInfoHelpMessage = "You can tell me a number for more information. For example, open number one, or what are the conditions of number one.";
 
@@ -41,6 +42,8 @@ var responseData;
 
 var city;
 
+var maxDistance = 30;
+
 var alexa;
 
 var newSessionHandlers = {
@@ -53,12 +56,15 @@ var newSessionHandlers = {
       this.emitWithState('getTrailsIntent');
   },
   'AMAZON.StopIntent': function () {
+      maxDistance = 30;
       this.emit(':tell', goodbyeMessage);
   },
   'AMAZON.CancelIntent': function () {
+      maxDistance = 30;
       this.emit(':tell', goodbyeMessage);
   },
   'SessionEndedRequest': function () {
+      maxDistance = 30;
       this.emit('AMAZON.StopIntent');
   },
   'Unhandled': function () {
@@ -135,7 +141,21 @@ var searchHandlers = Alexa.CreateStateHandler(states.SEARCHMODE, {
         this.emit(':ask', noCityErrorMessage);
       }
   },
+  'changeDistanceIntent': function () {
+    var distance = 0;
+    if (this.event.request.intent.slots.distance) {
+      if (this.event.request.intent.slots.distance.value) {
+        distance = this.event.request.intent.slots.distance.value;
+      }
+    }
 
+    if (distance > 0 && distance <= 200) {
+      maxDistance = distance;
+      this.emit(':ask', "The search distance was changed to " + maxDistance + " miles.", trailsHelpMessage);
+    } else {
+      this.emit(':ask', "Sorry, the distance you specified is not valid.");
+    }
+  },
   'AMAZON.YesIntent': function () {
       this.emit(':ask', trailsHelpMessage, trailsHelpMessage);
   },
@@ -143,6 +163,7 @@ var searchHandlers = Alexa.CreateStateHandler(states.SEARCHMODE, {
       this.emit(':ask', trailsHelpMessage, trailsHelpMessage);
   },
   'AMAZON.StopIntent': function () {
+      maxDistance = 30;
       this.emit(':tell', goodbyeMessage);
   },
   'AMAZON.HelpIntent': function () {
@@ -152,6 +173,7 @@ var searchHandlers = Alexa.CreateStateHandler(states.SEARCHMODE, {
       this.emit(':ask', output, trailsHelpMessage);
   },
   'AMAZON.CancelIntent': function () {
+      maxDistance = 30;
       this.emit(':tell', goodbyeMessage);
   },
   'SessionEndedRequest': function () {
@@ -211,6 +233,22 @@ var trailInfoHandlers = Alexa.CreateStateHandler(states.TRAILINFO, {
       this.emit(':ask', noTrailErrorMessage, trailsMoreInfoMessage);
     }
   },
+  'changeDistanceIntent': function () {
+    this.handler.state = states.SEARCHMODE;
+    var distance = 0;
+    if (this.event.request.intent.slots.distance) {
+      if (this.event.request.intent.slots.distance.value) {
+        distance = this.event.request.intent.slots.distance.value;
+      }
+    }
+
+    if (distance > 0 && distance <= 200) {
+      maxDistance = distance;
+      this.emit(':ask', "The search distance was changed to " + maxDistance + " miles.", trailsHelpMessage);
+    } else {
+      this.emit(':ask', "Sorry, the distance you specified is not valid.");
+    }
+  },
   'AMAZON.YesIntent': function () {
       this.emit(':ask', trailsMoreInfoMessage, trailsMoreInfoMessage);
   },
@@ -219,6 +257,7 @@ var trailInfoHandlers = Alexa.CreateStateHandler(states.TRAILINFO, {
       this.emit(':ask', welcomeReprompt, welcomeReprompt);
   },
   'AMAZON.StopIntent': function () {
+      maxDistance = 30;
       this.emit(':tell', goodbyeMessage);
   },
   'AMAZON.HelpIntent': function () {
@@ -228,6 +267,7 @@ var trailInfoHandlers = Alexa.CreateStateHandler(states.TRAILINFO, {
       this.emit(':ask', output, trailsMoreInfoHelpMessage);
   },
   'AMAZON.CancelIntent': function () {
+      maxDistance = 30;
       this.emit(':tell', goodbyeMessage);
   },
   'SessionEndedRequest': function () {
@@ -241,7 +281,7 @@ var trailInfoHandlers = Alexa.CreateStateHandler(states.TRAILINFO, {
 function httpsGetTrails(query, callback) {
   var options = {
     host: 'www.mtbproject.com',
-    path: '/data/get-trails?lat=' + query[0] + '&lon=' + query[1] + '&key=' + MTBProjectAPIKey,
+    path: '/data/get-trails?lat=' + query[0] + '&lon=' + query[1] + '&maxDistance=' + maxDistance + '&key=' + MTBProjectAPIKey,
     method: 'GET'
   };
  
