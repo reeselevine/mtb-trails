@@ -1,6 +1,6 @@
 var Alexa = require('alexa-sdk');
 var googleMapsClient = require('@google/maps').createClient({
-  key: 'Google Maps API Key here'
+  key: 'Google Maps API key here'
 
 
 });
@@ -11,13 +11,15 @@ var states = {
     TRAILINFO: '_TRAILINFO',
 };
 
-var MTBProjectAPIKey = 'MTB Project API Key here';
+var MTBProjectAPIKey = 'MTB Project API key here';
 
-var welcomeMessage = "Welcome to MTB Trails. You can ask for trails near a city name and get more information about those trails.";
+var welcomeMessage = "Welcome to MTB Trails. Ask me for trails near any city."
 
 var welcomeReprompt = "Ask me for trails near any city";
 
-var helpMessage = "Here is something you can ask me: Find me trails near Boulder, Colorado. After that, you can say: give me more information about trail number two, or what are the conditions of trail two. What do you want to do?";
+var trailsHelpMessage = "Here is something you can ask me: Find me trails near Boulder, Colorado. After that, you can say: give me more information about trail number two, or what are the conditions of trail two. What do you want to do?";
+
+var trailsMoreInfoHelpMessage = "You can tell me a number for more information. For example, open number one, or what are the conditions of number one.";
 
 var goodbyeMessage = "Thanks for using MTB trails. See you out on the bike!";
 
@@ -27,7 +29,7 @@ var cityConversionErrorMessage = "Something went wrong while looking for trails.
 
 var noTrailErrorMessage = "What trail was that? Please try again.";
 
-var trailsMoreInfoMessage = "You can tell me a number for more information. For example, open number one, or what are the conditions of number one.";
+var nullResponseMessage = "There was a problem getting trail data. Please try again.";
 
 var hearMoreMessage = "Would you like to hear about another trail?";
 
@@ -60,7 +62,7 @@ var newSessionHandlers = {
       this.emit('AMAZON.StopIntent');
   },
   'Unhandled': function () {
-      this.emit(':ask', helpMessage, welcomeReprompt);
+      this.emit(':ask', trailsHelpMessage, welcomeReprompt);
   }
 };
 
@@ -93,35 +95,37 @@ var searchHandlers = Alexa.CreateStateHandler(states.SEARCHMODE, {
             console.log(loc);
             httpsGetTrails(loc, function (response) {
               responseData = JSON.parse(response);
+
               var cardContent = "Data provided by MTB Project\n\n";
 
               if (responseData == null) {
-                output = "There was a problem getting trail data. Please try again.";
+                output = nullResponseMessage;
+	      } else if (responseData.trails.length == 0) {
+		output = "I have no data on trails near " + city + ". I'm sorry.";
               } else {
-                output = "There are " + responseData.trails.length + " trails near " + city + ".";
+		output = "Here are the top " + Math.min(numberOfTrails, responseData.trails.length) + " trails near " + city + ".";
                 if (responseData.trails.length > numberOfTrails) {
-                  output += " Here are the top " + numberOfTrails + ".";
+		  output += " See your Alexa app for information on all " + responseData.trails.length + " trails. ";
                 }
-                output += " See your Alexa app for more information and more trails. ";
               
                 for (var i = 0; i < responseData.trails.length; i++) {
+                  var name = responseData.trails[i].name;
+                  var summary = responseData.trails[i].summary;
+                  var difficulty = responseData.trails[i].difficulty;
                   if (i < numberOfTrails) {
-                    var name = responseData.trails[i].name;
-                    var summary = responseData.trails[i].summary;
-                    var difficulty = responseData.trails[i].difficulty;
                     var index = i + 1;
                     output += "Trail " + index + ";";
-
                     output += name + ". " + summary + " Difficulty: " + difficulty + ";";
                   }
                   cardContent += name + "\n" + summary + "\n" + "Difficulty: " + difficulty + "\n\n"; 
                 }
-              
+
+                output += "Tell me a trail number for more information."
+                output = output.replace(/&/, 'and');
               }
+
               var cardTitle = city + " Trails";
-              output += "\n" + trailsMoreInfoMessage; 
-              output = output.replace(/&/, 'and');
-              alexa.emit(':askWithCard', output, trailsMoreInfoMessage, cardTitle, cardContent);
+              alexa.emit(':askWithCard', output, trailsMoreInfoHelpMessage, cardTitle, cardContent);
             }); 
           } else {
             alexa.emit(':ask', cityConversionErrorMessage);
@@ -133,19 +137,19 @@ var searchHandlers = Alexa.CreateStateHandler(states.SEARCHMODE, {
   },
 
   'AMAZON.YesIntent': function () {
-      this.emit(':ask', helpMessage, helpMessage);
+      this.emit(':ask', trailsHelpMessage, trailsHelpMessage);
   },
   'AMAZON.NoIntent': function () {
-      this.emit(':ask', helpMessage, helpMessage);
+      this.emit(':ask', trailsHelpMessage, trailsHelpMessage);
   },
   'AMAZON.StopIntent': function () {
       this.emit(':tell', goodbyeMessage);
   },
   'AMAZON.HelpIntent': function () {
-      this.emit(':ask', helpMessage, helpMessage);
+      this.emit(':ask', trailsHelpMessage, trailsHelpMessage);
   },
   'AMAZON.RepeatIntent': function () {
-      this.emit(':ask', output, helpMessage);
+      this.emit(':ask', output, trailsHelpMessage);
   },
   'AMAZON.CancelIntent': function () {
       this.emit(':tell', goodbyeMessage);
@@ -154,7 +158,7 @@ var searchHandlers = Alexa.CreateStateHandler(states.SEARCHMODE, {
       this.emit('AMAZON.StopIntent');
   },
   'Unhandled': function () {
-      this.emit(':ask', helpMessage, welcomeReprompt);
+      this.emit(':ask', trailsHelpMessage, welcomeReprompt);
   }
 });
 
@@ -196,7 +200,7 @@ var trailInfoHandlers = Alexa.CreateStateHandler(states.TRAILINFO, {
       httpsGetConditions(id, function (response) {
         var trailCondition = JSON.parse(response);
         if (trailCondition == null) {
-          output = "There was a problem getting trails data. Please try again.";
+          output = nullResponseMessage;
         } else {
           output = 'As of ' + trailCondition["0"].conditionDate + ', ' + trailCondition["0"].name + ' has a condition of ' + trailCondition["0"].conditionStatus + '. ';
           output += hearMoreMessage;
@@ -211,16 +215,17 @@ var trailInfoHandlers = Alexa.CreateStateHandler(states.TRAILINFO, {
       this.emit(':ask', trailsMoreInfoMessage, trailsMoreInfoMessage);
   },
   'AMAZON.NoIntent': function () {
+      this.handler.state = states.SEARCHMODE;
       this.emit(':ask', welcomeReprompt, welcomeReprompt);
   },
   'AMAZON.StopIntent': function () {
       this.emit(':tell', goodbyeMessage);
   },
   'AMAZON.HelpIntent': function () {
-      this.emit(':ask', helpMessage, helpMessage);
+      this.emit(':ask', trailsMoreInfoHelpMessage, trailsMoreInfoHelpMessage);
   },
   'AMAZON.RepeatIntent': function () {
-      this.emit(':ask', output, helpMessage);
+      this.emit(':ask', output, trailsMoreInfoHelpMessage);
   },
   'AMAZON.CancelIntent': function () {
       this.emit(':tell', goodbyeMessage);
@@ -229,7 +234,7 @@ var trailInfoHandlers = Alexa.CreateStateHandler(states.TRAILINFO, {
       this.emit('AMAZON.StopIntent');
   },
   'Unhandled': function () {
-      this.emit(':ask', helpMessage, welcomeReprompt);
+      this.emit(':ask', trailsMoreInfoHelpMessage, welcomeReprompt);
   }
 });
 
